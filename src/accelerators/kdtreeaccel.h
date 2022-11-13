@@ -42,6 +42,10 @@
 #include "pbrt.h"
 #include "primitive.h"
 
+#if defined(PBRT_EXT_WOB)
+#include "wob/primitive_visitor.h"
+#endif
+
 namespace pbrt {
 
 // KdTreeAccel Declarations
@@ -74,6 +78,24 @@ class KdTreeAccel : public Aggregate {
     KdAccelNode *nodes;
     int nAllocedNodes, nextFreeNode;
     Bounds3f bounds;
+
+#if defined(PBRT_EXT_WOB)
+    // We don't want to mess with visibility more than we need to, so we put shared
+    // implementation in another class and declare it a friend of this one
+    using Visitor = pbrt_ext::PrimitiveVisitor<KdTreeAccel>;
+    friend Visitor;
+
+public:
+    SurfaceInteraction Sample(const Point2f &u, Float *pdf) const override {
+        return Visitor::sample(this, u, pdf);
+    }
+    Float SolidAngle(const Point3f &p) const override {
+        return Visitor::winding_number(this, p);
+    }
+
+private:
+    std::vector<Float> cumulativeArea;
+#endif
 };
 
 struct KdToDo {

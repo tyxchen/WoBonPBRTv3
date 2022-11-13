@@ -118,6 +118,11 @@
 #include <map>
 #include <stdio.h>
 
+#if defined(PBRT_EXT_WOB)
+// Additional headers
+#include "wob/wob.h"
+#endif
+
 namespace pbrt {
 
 // API Global Variables
@@ -1691,6 +1696,10 @@ Integrator *RenderOptions::MakeIntegrator() const {
         integrator = CreateAOIntegrator(IntegratorParams, sampler, camera);
     } else if (IntegratorName == "sppm") {
         integrator = CreateSPPMIntegrator(IntegratorParams, camera);
+#if defined(PBRT_EXT_WOB)
+    } else if (IntegratorName == "wob") {
+        integrator = pbrt_ext::CreateWoBIntegrator(IntegratorParams, sampler, camera);
+#endif
     } else {
         Error("Integrator \"%s\" unknown.", IntegratorName.c_str());
         return nullptr;

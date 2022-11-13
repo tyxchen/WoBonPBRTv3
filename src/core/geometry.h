@@ -982,7 +982,8 @@ inline Vector3<T> Cross(const Normal3<T> &v1, const Vector3<T> &v2) {
 
 template <typename T>
 inline Vector3<T> Normalize(const Vector3<T> &v) {
-    return v / v.Length();
+    auto l = v.Length();
+    return l > 0 ? v / l : v;
 }
 template <typename T>
 T MinComponent(const Vector3<T> &v) {

@@ -222,6 +222,10 @@ BVHAccel::BVHAccel(std::vector<std::shared_ptr<Primitive>> p,
     int offset = 0;
     flattenBVHTree(root, &offset);
     CHECK_EQ(totalNodes, offset);
+
+#if defined(PBRT_EXT_WOB)
+    Visitor::build(this);
+#endif
 }
 
 Bounds3f BVHAccel::WorldBound() const {

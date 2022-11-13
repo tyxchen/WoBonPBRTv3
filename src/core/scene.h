@@ -66,6 +66,16 @@ class Scene {
     bool IntersectP(const Ray &ray) const;
     bool IntersectTr(Ray ray, Sampler &sampler, SurfaceInteraction *isect,
                      Spectrum *transmittance) const;
+#if defined(PBRT_EXT_WOB)
+    SurfaceInteraction Sample(const Point2f &u, Float *pdf) const {
+        return aggregate->Sample(u, pdf);
+    }
+    bool OnBoundary(const Point3f &p) const {
+        // Note: Solid Angle is a misnomer here, this actually returns the winding angle since it's called
+        //  on an aggregate.
+        return aggregate->SolidAngle(p) == 0.5;
+    }
+#endif
 
     // Scene Public Data
     std::vector<std::shared_ptr<Light>> lights;

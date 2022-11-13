@@ -115,6 +115,10 @@ KdTreeAccel::KdTreeAccel(std::vector<std::shared_ptr<Primitive>> p,
     std::unique_ptr<int[]> primNums(new int[primitives.size()]);
     for (size_t i = 0; i < primitives.size(); ++i) primNums[i] = i;
 
+#if defined(PBRT_EXT_WOB)
+    Visitor::build(this);
+#endif
+
     // Start recursive construction of kd-tree
     buildTree(0, bounds, primBounds, primNums.get(), primitives.size(),
               maxDepth, edges, prims0.get(), prims1.get());
