@@ -10,3 +10,6 @@
 [submodule "src/ext/ptex"]
 	path = src/ext/ptex
 	url = https://github.com/wdas/ptex.git
+[submodule "src/wob/thirdparty/tinycolormap"]
+	path = src/wob/thirdparty/tinycolormap
+	url = https://github.com/yuki-koyama/tinycolormap

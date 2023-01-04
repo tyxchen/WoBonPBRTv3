@@ -502,6 +502,11 @@ ADD_LIBRARY ( pbrt STATIC
   )
 ADD_SANITIZERS ( pbrt )
 
+if(PBRT_EXT_WOB)
+  add_subdirectory(src/wob/thirdparty/tinycolormap)
+  target_link_libraries(pbrt tinycolormap)
+endif()
+
 # A non-exhaustive but pretty representative set..
 # Note that we work-around shoddy c++11 support in MSVC2013
 # (constexpr, etc.), so don't test for that stuff here

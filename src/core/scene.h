@@ -68,7 +68,27 @@ class Scene {
                      Spectrum *transmittance) const;
 #if defined(PBRT_EXT_WOB)
     SurfaceInteraction Sample(const Point2f &u, Float *pdf) const {
-        return aggregate->Sample(u, pdf);
+        // temporary hard-coded cube sample
+        auto [x, y] = u;
+        Point3f p;
+
+        x *= 6;
+        if (x < 1.f) {
+            p = {x, y, 0.};
+        } else if (x < 2.f) {
+            p = {x - 1.f, y, 1.};
+        } else if (x < 3.f) {
+            p = {0., x - 2.f, y};
+        } else if (x < 4.f) {
+            p = {1., x - 3.f, y};
+        } else if (x < 5.f) {
+            p = {x - 4.f, 0., y};
+        } else {
+            p = {x - 5.f, 1., y};
+        }
+
+        return {p, {}, {}, {}, {}, {}, {}, {}, 0., nullptr};
+//        return aggregate->Sample(u, pdf);
     }
     bool OnBoundary(const Point3f &p) const {
         // Note: Solid Angle is a misnomer here, this actually returns the winding angle since it's called

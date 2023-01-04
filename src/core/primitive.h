@@ -94,9 +94,10 @@ class GeometricPrimitive : public Primitive {
         // TODO: something less hacky and more efficient than just casting a ray like this
         //  in order to get the UV and shape/primitive
         Ray r({0, 0, 0}, Vector3f(intr.p));
-        SurfaceInteraction ret;
-        shape->Intersect(r, &r.tMax, &ret);
-        return ret;
+        SurfaceInteraction isect;
+        shape->Intersect(r, &r.tMax, &isect);
+        isect.primitive = this;
+        return isect;
     }
     Float Area() const override {
         return shape->Area();

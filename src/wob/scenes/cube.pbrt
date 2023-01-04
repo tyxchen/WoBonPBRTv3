@@ -1,24 +1,27 @@
-LookAt 400 20 30   0 63 -110   0 0 1
-Rotate -5 0 0 1
-Camera "perspective" "float fov" [39]
+LookAt 0.5 -2 3   0.5 0.5 0.5   1 0 0
+Camera "perspective" "float fov" [40]
 Film "image"
-"integer xresolution" [64] "integer yresolution" [64]
+"integer xresolution" [128] "integer yresolution" [128]
     "string filename" "cube.png"
 
-Sampler "random"
+Sampler "random" "integer pixelsamples" 1024
 
+# Integrator "path"
 Integrator "wob"
     "string boundarycond" "dirichlet"
+    "string domaintype" "exterior"
+    "string colourmap" "jet"
 
 WorldBegin
+
+LightSource "infinite" "rgb L" [.4 .45 .5]
 
 # Converted from "untitled.obj" by obj2pbrt
 # Scene bounds: (0.000000, 0.000000, 0.000000) - (1.000000, 1.000000, 1.000000)
 
+MakeNamedMaterial "A" "string type" "matte" "color Kd" [1.00000 0.000000 0.000000]
 
-MakeNamedMaterial "A" "string type" "matte" "color Kd" [0.500000 0.000000 0.000000]
-
-MakeNamedMaterial "B" "string type" "matte" "color Kd" [0.000000 0.000000 0.500000]
+MakeNamedMaterial "B" "string type" "matte" "color Kd" [0.000000 0.000000 1.00000]
 
 MakeNamedMaterial "Material" "string type" "matte" "color Kd" [0.000000 0.000000 0.000000]
 

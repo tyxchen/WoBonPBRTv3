@@ -4,9 +4,11 @@
 
 #include "core/camera.h"
 #include "core/film.h"
+#include "core/imageio.h"
+#include "core/paramset.h"
 #include "core/progressreporter.h"
 #include "core/scene.h"
-#include "core/paramset.h"
+
 #include "wob/wob.h"
 
 using namespace pbrt;
@@ -21,24 +23,19 @@ inline Float H(const Point3f &x, const Point3f &y, const Normal3f &n_y) {
     return -Inv4Pi * Dot(y - x, n_y) / (r * r * r);
 }
 
-inline Float SpecToFloat(const Spectrum &s) {
-    return Pi * (s[0] + -s[2]);
-}
-
-inline Spectrum FloatToSpec(Float f) {
-    constexpr
-    #include <wob/turbo_colormap.c>
-
-    auto clamped_f = std::min(std::max(f, Float(-1.)), Float(1.));
-    clamped_f = Float(0.5) * (clamped_f + Float(1.));
-    return Spectrum::FromRGB(turbo_srgb_floats[(int)std::floor(clamped_f * 255)]);
-}
-
 WoBIntegrator::WoBIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
                              std::shared_ptr<Sampler> sampler,
                              const pbrt::Bounds2i &pixelBounds, pbrt::Float rrThreshold,
-                             const std::string &boundaryCond)
-: sampler(sampler), pixelBounds(pixelBounds), camera(camera), maxDepth(5)
+                             const std::string &boundaryCond,
+                             const std::string &domainType,
+                             const std::string &colourmapParam)
+                             :
+#if USE_SAMPLER_INTEGRATOR
+    pbrt::SamplerIntegrator(std::move(camera), sampler, pixelBounds),
+#else
+    camera(std::move(camera)), sampler(std::move(sampler)), pixelBounds(pixelBounds),
+#endif
+    maxDepth(5), rrThreshold(rrThreshold)
 {
     if (boundaryCond == "dirichlet") {
         cond = DIRICHLET;
@@ -48,6 +45,26 @@ WoBIntegrator::WoBIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
         cond = ROBIN;
     } else {
         throw std::logic_error("Bad boundary condition given.");
+    }
+
+    if (domainType == "interior") {
+        domain = INTERIOR;
+    } else if (domainType == "exterior") {
+        domain = EXTERIOR;
+    } else {
+        throw std::logic_error("Bad domain type given.");
+    }
+
+    if (colourmapParam == "jet") {
+        colourmap = tinycolormap::ColormapType::Jet;
+    } else if (colourmapParam == "heat") {
+        colourmap = tinycolormap::ColormapType::Heat;
+    } else if (colourmapParam == "turbo") {
+        colourmap = tinycolormap::ColormapType::Turbo;
+    } else if (colourmapParam == "viridis") {
+        colourmap = tinycolormap::ColormapType::Viridis;
+    } else {
+        throw std::logic_error("Unknown colourmap given.");
     }
 }
 
@@ -61,6 +78,16 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
     const int tileSize = 16;
     Point2i nTiles((sampleExtent.x + tileSize - 1) / tileSize,
                    (sampleExtent.y + tileSize - 1) / tileSize);
+
+    // Custom image buffer for the colourmap
+    std::unique_ptr<Float[]> img_buf(new Float[3 * sampleBounds.Area()]{0.});
+
+#define PIXEL(p) (p.y * sampleExtent.x + p.x)
+#define CHANNEL(p, offset) (3 * PIXEL(p) + offset)
+
+    std::mutex mutex;
+
+#if !USE_SAMPLER_INTEGRATOR
     ProgressReporter reporter(nTiles.x * nTiles.y, "Rendering");
     {
         ParallelFor2D([&](Point2i tile) {
@@ -106,70 +133,141 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
 
                     // Generate camera ray for current sample
                     RayDifferential ray;
-                    Float px = Float(pixel.x) / Float(sampleBounds.Diagonal().x);
-                    Float py = Float(pixel.y) / Float(sampleBounds.Diagonal().y);
-                    ray.o = Point3f(px, py, 0.);
-                    ray.d = UniformSampleHemisphere(tileSampler->Get2D());
-
-//                    ray.ScaleDifferentials(
-//                        1 / std::sqrt((Float)tileSampler->samplesPerPixel));
+//                    Float px = (Float(pixel.x) + 0.5f) / Float(sampleBounds.Diagonal().x);
+//                    Float py = (Float(pixel.y) + 0.5f) / Float(sampleBounds.Diagonal().y);
+//                    ray.o = Point3f(px, py, 0.5);
+//                    ray.d = UniformSampleHemisphere(tileSampler->Get2D());
+                    Float rayWeight =
+                        camera->GenerateRayDifferential(cameraSample, &ray);
+                    ray.ScaleDifferentials(
+                        1 / std::sqrt((Float)tileSampler->samplesPerPixel));
 
                     // Evaluate radiance along camera ray
-                    Float L = Li(ray, scene, *tileSampler, arena);
+                    Spectrum L(0.f);
+                    if (rayWeight > 0) L = Li(ray, scene, *tileSampler, arena);
 
                     // Issue warning if unexpected radiance value returned
-                    if (std::isnan(L)) {
+                    if (L.HasNaNs()) {
                         LOG(ERROR) << StringPrintf(
                             "Not-a-number radiance value returned "
                             "for pixel (%d, %d), sample %d. Setting to black.",
                             pixel.x, pixel.y,
                             (int)tileSampler->CurrentSampleNumber());
-                        L = Float(0.);
-                    } else if (std::isinf(L)) {
+                        L = Spectrum(0.);
+                    } else if (std::isinf(L.y())) {
                         LOG(ERROR) << StringPrintf(
                             "Infinite luminance value returned "
                             "for pixel (%d, %d), sample %d. Setting to black.",
                             pixel.x, pixel.y,
                             (int)tileSampler->CurrentSampleNumber());
-                        L = Float(0.);
+                        L = Spectrum(0.);
                     }
                     VLOG(1) << "Camera sample: " << cameraSample << " -> ray: " <<
                             ray << " -> L = " << L;
 
                     // Add camera ray's contribution to image
-                    filmTile->AddSample(cameraSample.pFilm, Spectrum(L), 1.);
+                    // Note: we directly add to the filmTile to bypass the filter pipeline
+                    filmTile->GetPixel(pixel).contribSum += L;
+                    filmTile->GetPixel(pixel).filterWeightSum += 1.;
 
                     // Free _MemoryArena_ memory from computing image sample
                     // value
                     arena.Reset();
                 } while (tileSampler->StartNextSample());
 
-                filmTile->GetPixel(pixel).contribSum = FloatToSpec(filmTile->GetPixel(pixel).contribSum[0] /
-                    Float(tileSampler->samplesPerPixel));
             }
             LOG(INFO) << "Finished image tile " << tileBounds;
 
-            // Merge image tile into _Film_
-            camera->film->MergeFilmTile(std::move(filmTile));
+            // Merge image tile into _img_buf_
+            {
+                ProfilePhase p(Prof::MergeFilmTile);
+                LOG(INFO) << "Merging film tile " << tileBounds;
+                std::lock_guard<std::mutex> lock(mutex);
+                for (Point2i pixel : tileBounds) {
+                    // Merge _pixel_ into _Film::pixels_
+                    const FilmTilePixel &tilePixel = filmTile->GetPixel(pixel);
+                    // still operating in float-only mode, so we only need to add the first channel
+                    img_buf[CHANNEL(pixel, 0)] += tilePixel.contribSum[0];
+                    img_buf[CHANNEL(pixel, 1)] += tilePixel.filterWeightSum;  // reuse green channel for sample weight
+                    img_buf[CHANNEL(pixel, 2)] += tilePixel.contribSum[1];  // use blue channel for object intersection
+                }
+            }
+
             reporter.Update();
         }, nTiles);
         reporter.Done();
     }
     LOG(INFO) << "Rendering finished";
+#else
+    this->pbrt::SamplerIntegrator::Render(scene);
+
+    // Convert results to colourmap
+    ParallelFor2D([&](Point2i tile) {
+        // Compute sample bounds for tile
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+
+        // Get _FilmTile_ for tile
+        std::unique_ptr<FilmTile> filmTile =
+            camera->film->GetFilmTile(tileBounds);
+
+        // Merge image tile into _img_buf_
+        {
+            ProfilePhase p(Prof::MergeFilmTile);
+            LOG(INFO) << "Merging film tile " << tileBounds;
+            std::lock_guard<std::mutex> lock(mutex);
+            for (Point2i pixel : tileBounds) {
+                // Merge _pixel_ into _Film::pixels_
+                const FilmTilePixel &tilePixel = filmTile->GetPixel(pixel);
+                // still operating in float-only mode, so we only need to add the first channel
+                img_buf[CHANNEL(pixel, 0)] += tilePixel.contribSum[0];
+                img_buf[CHANNEL(pixel, 1)] += tilePixel.filterWeightSum;  // reuse green channel for sample weight
+                std::cerr << tilePixel.filterWeightSum << std::endl;
+            }
+        }
+    }, nTiles);
+#endif
 
     // Save final image after rendering
-    camera->film->WriteImage();
+    auto centre_pixel = Point2i(sampleBounds.Lerp({0.5f, 0.5f}));
+    auto nullspace_correction = cond == NEUMANN ? img_buf[CHANNEL(centre_pixel, 0)] : 0.f;
+    std::cerr << "Nullspace correction: " << nullspace_correction / img_buf[CHANNEL(centre_pixel, 1)] << '\n';
+
+    auto width = camera->film->croppedPixelBounds.Diagonal().x;
+    auto offset = camera->film->croppedPixelBounds.pMin - sampleBounds.pMin;
+#undef PIXEL
+#define PIXEL(p) ((p.y - offset.y) * width + p.x - offset.x)
+
+    for (auto pixel : camera->film->croppedPixelBounds) {
+        Float estimate = img_buf[CHANNEL(pixel, 0)];
+//        std::cerr << img_buf[CHANNEL(pixel, 1)] << std::endl;
+        if (cond == NEUMANN) {
+            estimate -= nullspace_correction;
+        }
+        estimate /= img_buf[CHANNEL(pixel, 1)];
+        FloatToRGB(estimate, &img_buf[CHANNEL(pixel, 0)]);
+    }
+    // TODO: write own image reading/writing methods that don't do gamma correction
+    pbrt::WriteImage(camera->film->filename, img_buf.get(),
+                     camera->film->croppedPixelBounds, camera->film->fullResolution);
+
+#undef CHANNEL
+#undef PIXEL
 }
 
-Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene, pbrt::Sampler &sampler,
-                        pbrt::MemoryArena &arena, int depth) const
+pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene, pbrt::Sampler &sampler,
+                                 pbrt::MemoryArena &arena, int depth) const
 {
     ProfilePhase _(Prof::SamplerIntegratorLi);
     Point3f p = r.o;
     RayDifferential ray(r);
     int bounces;
+    int start = 0;
 
-    Float c = scene.OnBoundary(p) ? 2. : 1.;
+    Float c = DomainCoefficient() * Float(scene.OnBoundary(p) ? 2. : 1.);
 
     Float solution_sample(0.);
     Float pre_solution(0.);
@@ -182,9 +280,30 @@ Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene
         vhit.ComputeScatteringFunctions(r, arena);
         auto qbar = SpecToFloat(vhit.bsdf->f(vhit.wo, vhit.wo));
         pre_solution += G(p, vhit.p) * qbar / pdf_sample;
+        start = 1;
+        S = 2.;
     }
 
-    for (bounces = 0; bounces <= maxDepth; ++bounces) {
+    // first, check intersection with the object
+    SurfaceInteraction isect_initial;
+    auto initial_dir = UniformSampleHemisphere(sampler.Get2D());
+    if (scene.Intersect(ray, &isect_initial)) {
+        ray = isect_initial.SpawnRay(initial_dir);
+    } else {
+        // intersect with plane z = 0 first, then use that intersection point for the exterior solution
+        //  to create effect similar to Sawhney and Crane (2020)
+        auto inv_dz = Float(1) / ray.d.z;
+        if (isinf(inv_dz)) {
+            return {};
+        }
+
+        auto t_ = -p.z * inv_dz;
+        p = { p.x + t_ * r.d.x, p.y + t_ * r.d.y, 0 };
+        ray.o = p;
+        ray.d = (-2 * domain + 1) * initial_dir;
+    }
+
+    for (bounces = start; bounces <= maxDepth; ++bounces) {
         // Find next path vertex and accumulate contribution
         VLOG(2) << "Path tracer bounce " << bounces << ", current S = " << S
                 << ", solution_sample = " << solution_sample;
@@ -194,20 +313,21 @@ Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene
         bool foundIntersectionFwd = false, foundIntersectionBckwd = false;
 
         size_t m = 0;
-        Float pdf_isect;
         auto o = ray.o;
 
+        // Forward intersection
         while (scene.Intersect(ray, &isect_current)) {
             ray.o = isect_current.p + Float(1e-6) * ray.d;
 
-            pdf_isect = Float(1) / Float(++m);
+            m += 1;
             auto u = sampler.Get1D();
-            if (u < pdf_isect) {
+            if (Float(m) < Float(1.) / u) {  // equivalent to u < 1/m for reservoir sampling
                 isect = isect_current;
             }
             foundIntersectionFwd = true;
         }
 
+        // Backward intersection
         ray.o = o;
         ray.d *= -1;
         ray.tMax = Infinity;
@@ -215,14 +335,15 @@ Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene
         while (scene.Intersect(ray, &isect_current)) {
             ray.o = isect_current.p + Float(1e-6) * ray.d;
 
-            pdf_isect = Float(1) / Float(++m);
+            m += 1;
             auto u = sampler.Get1D();
-            if (u < pdf_isect) {
+            if (Float(m) < Float(1.) / u) {
                 isect = isect_current;
             }
             foundIntersectionBckwd = true;
         }
 
+        // Stop if no intersections found
         if (!foundIntersectionFwd && !foundIntersectionBckwd) {
             break;
         }
@@ -234,8 +355,8 @@ Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene
         case DIRICHLET: {
             isect.ComputeScatteringFunctions(r, arena);
             auto ubar = SpecToFloat(isect.bsdf->f(isect.wo, isect.wo));
-            // here sign(0) = -1 so that S is unchanged in that case
-            S *= -Float(Dot(isect.wo, isect.n) < -1e-6 ? m : -m);
+            // here sign(0) = 1 so that S is unchanged in that case
+            S *= Dot(isect.wo, isect.n) < -1e-6 ? -Float(m) : Float(m);
             solution_sample += Float(bounces == maxDepth ? 0.5 : 1) * S * ubar;
             break;
         }
@@ -243,8 +364,9 @@ Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene
             Float pdf_sample;
             auto vhit = scene.Sample(sampler.Get2D(), &pdf_sample);
             vhit.ComputeScatteringFunctions(r, arena);
-            auto qbar = SpecToFloat(vhit.bsdf->f(vhit.wo, vhit.wo) * Pi);
-            S *= Float(Dot(isect.wo, isect.n) < 1e-6 ? m : -m);
+            auto qbar = SpecToFloat(vhit.bsdf->f(vhit.wo, vhit.wo));
+            // simplification of sgn(-wo, n) * m
+            S *= Dot(isect.wo, isect.n) < -1e-6 ? Float(m) : -Float(m);
             solution_sample += S * G(isect.p, vhit.p) * qbar / pdf_sample;
             break;
         }
@@ -259,7 +381,10 @@ Float WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene
         ray = isect.SpawnRay(wi);
 
     }
-    return c * (pre_solution + solution_sample);
+    auto res = c * (pre_solution + solution_sample);
+    Float res_v[3] = {res, 16, 0};
+
+    return Spectrum::FromRGB(res_v);
 }
 
 WoBIntegrator *pbrt_ext::CreateWoBIntegrator(const pbrt::ParamSet &params, std::shared_ptr<pbrt::Sampler> sampler,
@@ -283,6 +408,10 @@ WoBIntegrator *pbrt_ext::CreateWoBIntegrator(const pbrt::ParamSet &params, std::
     Float rrThreshold = params.FindOneFloat("rrthreshold", 1.);
     std::string boundaryCond =
         params.FindOneString("boundarycond", "dirichlet");
+    std::string domainType =
+        params.FindOneString("domaintype", "interior");
+    std::string colourmapParam =
+        params.FindOneString("colourmap", "turbo");
     return new WoBIntegrator(maxDepth, camera, sampler, pixelBounds,
-                             rrThreshold, boundaryCond);
+                             rrThreshold, boundaryCond, domainType, colourmapParam);
 }

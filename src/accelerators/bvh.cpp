@@ -224,7 +224,7 @@ BVHAccel::BVHAccel(std::vector<std::shared_ptr<Primitive>> p,
     CHECK_EQ(totalNodes, offset);
 
 #if defined(PBRT_EXT_WOB)
-    Visitor::build(this);
+    visitor.build(&primitives);
 #endif
 }
 

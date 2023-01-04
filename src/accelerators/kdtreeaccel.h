@@ -81,16 +81,15 @@ class KdTreeAccel : public Aggregate {
 
 #if defined(PBRT_EXT_WOB)
     // We don't want to mess with visibility more than we need to, so we put shared
-    // implementation in another class and declare it a friend of this one
-    using Visitor = pbrt_ext::PrimitiveVisitor<KdTreeAccel>;
-    friend Visitor;
+    // implementation in another class
+    pbrt_ext::PrimitiveVisitor<KdTreeAccel> visitor;
 
 public:
     SurfaceInteraction Sample(const Point2f &u, Float *pdf) const override {
-        return Visitor::sample(this, u, pdf);
+        return visitor.sample(u, pdf);
     }
     Float SolidAngle(const Point3f &p) const override {
-        return Visitor::winding_number(this, p);
+        return visitor.winding_number(p);
     }
 
 private:

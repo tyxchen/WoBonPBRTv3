@@ -10,45 +10,47 @@
 namespace pbrt_ext
 {
 template <typename T>
-class PrimitiveVisitor {
-    friend T;
-
-    inline static void build(T * const host) {
+struct PrimitiveVisitor {
+    inline void build(const std::vector<std::shared_ptr<pbrt::Primitive>> *prims) {
+        primitives = prims;
         // Calculate cumulative area
-        host->cumulativeArea.reserve(host->primitives.size() + 1);
-        host->cumulativeArea.push_back(0);
-        for (const auto &prim : host->primitives) {
-            host->cumulativeArea.push_back(host->cumulativeArea.back() + prim->Area());
+        cumulativeArea.reserve(primitives->size() + 1);
+        cumulativeArea.push_back(0);
+        for (const auto &prim : *primitives) {
+            cumulativeArea.push_back(cumulativeArea.back() + prim->Area());
         }
     }
 
-    inline static pbrt::SurfaceInteraction sample(const T * const host, const pbrt::Point2f &u, pbrt::Float *pdf) {
-        size_t n = host->primitives.size();
-        auto v = host->cumulativeArea[n] * u.x;
+    inline pbrt::SurfaceInteraction sample(const pbrt::Point2f &u, pbrt::Float *pdf) const {
+        size_t n = primitives->size();
+        auto v = cumulativeArea[n] * u.x;
         size_t lower = 0, upper = n;
         while (lower < upper - 1) {
             auto mid = (upper + lower) / 2;
-            if (v < host->cumulativeArea[mid]) {
+            if (v < cumulativeArea[mid]) {
                 upper = mid;
             } else {
                 lower = mid;
             }
         }
-        const auto f = host->primitives[lower];
-        v = (v - host->cumulativeArea[lower]) / (host->cumulativeArea[upper] - host->cumulativeArea[lower]);
-        *pdf = pbrt::Float(1.) / host->cumulativeArea[n];
+        const auto f = (*primitives)[lower];
+        v = (v - cumulativeArea[lower]) / (cumulativeArea[upper] - cumulativeArea[lower]);
+        *pdf = pbrt::Float(1.) / cumulativeArea[n];
         pbrt::Float dummy;
         return f->Sample({v, u.y}, &dummy);
     }
 
-    inline static pbrt::Float winding_number(const T * const host, const pbrt::Point3f &p) {
+    inline pbrt::Float winding_number(const pbrt::Point3f &p) const {
         // Winding number calculation from Jacobson, Kavan, and Sorkine-Hornung 2013
         pbrt::Float winding = 0;
-        for (const auto &prim : host->primitives) {
+        for (const auto &prim : *primitives) {
             winding += prim->SolidAngle(p);
         }
         return winding * pbrt::Inv4Pi;
     }
+
+    std::vector<pbrt::Float> cumulativeArea;
+    const std::vector<std::shared_ptr<pbrt::Primitive>> *primitives = nullptr;
 };
 }
 
