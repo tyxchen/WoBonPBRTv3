@@ -1,4 +1,4 @@
-LookAt 0.5 -2 3   0.5 0.5 0.5   1 0 0
+LookAt 0 0 3   0 0 0   0 -1 0
 Camera "perspective" "float fov" [40]
 Film "image"
 "integer xresolution" [128] "integer yresolution" [128]
@@ -6,10 +6,10 @@ Film "image"
 
 Sampler "random" "integer pixelsamples" 1024
 
-# Integrator "path"
+#Integrator "path"
 Integrator "wob"
     "string boundarycond" "dirichlet"
-    "string domaintype" "exterior"
+#    "string domaintype" "exterior"
     "string colourmap" "jet"
 
 WorldBegin
@@ -25,15 +25,22 @@ MakeNamedMaterial "B" "string type" "matte" "color Kd" [0.000000 0.000000 1.0000
 
 MakeNamedMaterial "Material" "string type" "matte" "color Kd" [0.000000 0.000000 0.000000]
 
+Texture "test-texture.png" "color" "imagemap"
+	"string filename" "texture.png"
+MakeNamedMaterial "test-material"
+	"string type" "matte"
+	"texture Kd" "test-texture.png"
+
 # Name "Cube"
 AttributeBegin
-NamedMaterial "A"
+#NamedMaterial "A"
+NamedMaterial "test-material"
 Shape "trianglemesh"
   "point3 P" [
-	0 1 1
-	1 1 0
-	0 1 0
-	1 1 1
+	-0.5 0.5 0.5
+	0.5 0.5 -0.5
+	-0.5 0.5 -0.5
+	0.5 0.5 0.5
 ]
   "normal N" [
 	-0 1 -0
@@ -52,13 +59,14 @@ Shape "trianglemesh"
 	0 3 1
 	]
 
-NamedMaterial "B"
+#NamedMaterial "B"
+NamedMaterial "test-material"
 Shape "trianglemesh"
   "point3 P" [
-	1 0 1
-	0 0 0
-	1 0 0
-	0 0 1
+	0.5 -0.5 0.5
+	-0.5 -0.5 -0.5
+	0.5 -0.5 -0.5
+	-0.5 -0.5 0.5
 ]
   "normal N" [
 	-0 -1 -0
@@ -77,25 +85,26 @@ Shape "trianglemesh"
 	0 3 1
 	]
 
-NamedMaterial "Material"
+#NamedMaterial "Material"
+NamedMaterial "test-material"
 Shape "trianglemesh"
   "point3 P" [
-	0 1 1
-	1 0 1
-	1 1 1
-	0 0 1
-	0 1 0
-	0 0 0
-	1 1 0
-	0 0 0
-	0 1 0
-	1 1 1
-	1 0 0
-	1 1 0
-	0 0 1
-	0 1 1
-	1 0 0
-	1 0 1
+	-0.5 0.5 0.5
+	0.5 -0.5 0.5
+	0.5 0.5 0.5
+	-0.5 -0.5 0.5
+	-0.5 0.5 -0.5
+	-0.5 -0.5 -0.5
+	0.5 0.5 -0.5
+	-0.5 -0.5 -0.5
+	-0.5 0.5 -0.5
+	0.5 0.5 0.5
+	0.5 -0.5 -0.5
+	0.5 0.5 -0.5
+	-0.5 -0.5 0.5
+	-0.5 0.5 0.5
+	0.5 -0.5 -0.5
+	0.5 -0.5 0.5
 ]
   "normal N" [
 	-0 -0 1

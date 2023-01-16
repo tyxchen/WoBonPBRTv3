@@ -11,6 +11,11 @@
 
 #include "wob/wob.h"
 
+#include <fstream>
+#include <iomanip>
+
+#define USE_CAMERA 1
+
 using namespace pbrt;
 using namespace pbrt_ext;
 
@@ -133,18 +138,26 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
 
                     // Generate camera ray for current sample
                     RayDifferential ray;
-//                    Float px = (Float(pixel.x) + 0.5f) / Float(sampleBounds.Diagonal().x);
-//                    Float py = (Float(pixel.y) + 0.5f) / Float(sampleBounds.Diagonal().y);
-//                    ray.o = Point3f(px, py, 0.5);
-//                    ray.d = UniformSampleHemisphere(tileSampler->Get2D());
+#if USE_CAMERA
                     Float rayWeight =
                         camera->GenerateRayDifferential(cameraSample, &ray);
                     ray.ScaleDifferentials(
                         1 / std::sqrt((Float)tileSampler->samplesPerPixel));
+#else
+                    Float scale = 1;
+                    Float px = (Float(pixel.x) + 0.5f) / Float(sampleBounds.Diagonal().x) - 0.5f;
+                    Float py = (Float(pixel.y) + 0.5f) / Float(sampleBounds.Diagonal().y) - 0.5f;
+                    ray.o = Point3f(scale * px, scale  * py, 0);
+                    ray.d = UniformSampleHemisphere(tileSampler->Get2D());
+#endif
 
                     // Evaluate radiance along camera ray
                     Spectrum L(0.f);
+#if USE_CAMERA
                     if (rayWeight > 0) L = Li(ray, scene, *tileSampler, arena);
+#else
+                    L = Li(ray, scene, *tileSampler, arena);
+#endif
 
                     // Issue warning if unexpected radiance value returned
                     if (L.HasNaNs()) {
@@ -189,7 +202,7 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
                     // still operating in float-only mode, so we only need to add the first channel
                     img_buf[CHANNEL(pixel, 0)] += tilePixel.contribSum[0];
                     img_buf[CHANNEL(pixel, 1)] += tilePixel.filterWeightSum;  // reuse green channel for sample weight
-                    img_buf[CHANNEL(pixel, 2)] += tilePixel.contribSum[1];  // use blue channel for object intersection
+                    img_buf[CHANNEL(pixel, 2)] += tilePixel.contribSum[2];  // use blue channel for object intersection
                 }
             }
 
@@ -241,15 +254,35 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
 #undef PIXEL
 #define PIXEL(p) ((p.y - offset.y) * width + p.x - offset.x)
 
+    size_t i = 0;
+    std::ofstream out_file(camera->film->filename + ".txt");
+    out_file << std::setprecision(3);
+
     for (auto pixel : camera->film->croppedPixelBounds) {
         Float estimate = img_buf[CHANNEL(pixel, 0)];
-//        std::cerr << img_buf[CHANNEL(pixel, 1)] << std::endl;
+        bool did_isect = img_buf[CHANNEL(pixel, 2)] != 0.;
         if (cond == NEUMANN) {
             estimate -= nullspace_correction;
         }
         estimate /= img_buf[CHANNEL(pixel, 1)];
-        FloatToRGB(estimate, &img_buf[CHANNEL(pixel, 0)]);
+        if ((domain == INTERIOR && did_isect) || (domain == EXTERIOR && !did_isect)) {
+            FloatToRGB(estimate, &img_buf[CHANNEL(pixel, 0)]);
+            out_file << std::setw(8) << estimate;
+        } else {
+            img_buf[CHANNEL(pixel, 0)] = 0;
+            img_buf[CHANNEL(pixel, 1)] = 0;
+            img_buf[CHANNEL(pixel, 2)] = 0;
+            out_file << "\t";
+        }
+
+        if (++i < sampleExtent.x) {
+            out_file << "\t";
+        } else {
+            out_file << "\n";
+            i = 0;
+        }
     }
+    out_file << "\n";
     // TODO: write own image reading/writing methods that don't do gamma correction
     pbrt::WriteImage(camera->film->filename, img_buf.get(),
                      camera->film->croppedPixelBounds, camera->film->fullResolution);
@@ -267,41 +300,45 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Sce
     int bounces;
     int start = 0;
 
-    Float c = DomainCoefficient() * Float(scene.OnBoundary(p) ? 2. : 1.);
-
-    Float solution_sample(0.);
-    Float pre_solution(0.);
-    Float S(1.);
-
-    if (cond == NEUMANN) {
-        // calculate pre-solution for NEE
-        Float pdf_sample;
-        auto vhit = scene.Sample(sampler.Get2D(), &pdf_sample);
-        vhit.ComputeScatteringFunctions(r, arena);
-        auto qbar = SpecToFloat(vhit.bsdf->f(vhit.wo, vhit.wo));
-        pre_solution += G(p, vhit.p) * qbar / pdf_sample;
-        start = 1;
-        S = 2.;
-    }
-
+#if USE_CAMERA
     // first, check intersection with the object
     SurfaceInteraction isect_initial;
     auto initial_dir = UniformSampleHemisphere(sampler.Get2D());
-    if (scene.Intersect(ray, &isect_initial)) {
+    auto did_isect = scene.Intersect(ray, &isect_initial);
+    if (domain == EXTERIOR && did_isect && copysignf(1.0f, isect_initial.p.z) == copysignf(1.0f, p.z)) {  // Epsilon
+        // check?
+        did_isect = true;
         ray = isect_initial.SpawnRay(initial_dir);
+        p = isect_initial.p;
     } else {
+        did_isect = false;
         // intersect with plane z = 0 first, then use that intersection point for the exterior solution
         //  to create effect similar to Sawhney and Crane (2020)
         auto inv_dz = Float(1) / ray.d.z;
+
         if (isinf(inv_dz)) {
+            // camera ray parallel to plane
             return {};
         }
 
         auto t_ = -p.z * inv_dz;
         p = { p.x + t_ * r.d.x, p.y + t_ * r.d.y, 0 };
         ray.o = p;
-        ray.d = (-2 * domain + 1) * initial_dir;
+        ray.d = DomainCoefficient() * initial_dir;
+
+        if (domain == INTERIOR) {
+            did_isect = -0.5 <= p.x && p.x <= 0.5 && -0.5 <= p.y && p.y <= 0.5;
+        }
     }
+#else
+    auto did_isect = true;
+#endif
+
+    Float c = DomainCoefficient() * Float(scene.OnBoundary(p) ? 2. : 1.);
+
+    Float solution_sample(0.);
+    Float pre_solution(0.);
+    Float S(1.);
 
     for (bounces = start; bounces <= maxDepth; ++bounces) {
         // Find next path vertex and accumulate contribution
@@ -351,38 +388,20 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Sce
         // Calculate estimate
         // Assume material is MatteMaterial with sigma=0 for LambertianReflection BxDF
 
-        switch (cond) {
-        case DIRICHLET: {
-            isect.ComputeScatteringFunctions(r, arena);
-            auto ubar = SpecToFloat(isect.bsdf->f(isect.wo, isect.wo));
-            // here sign(0) = 1 so that S is unchanged in that case
-            S *= Dot(isect.wo, isect.n) < -1e-6 ? -Float(m) : Float(m);
-            solution_sample += Float(bounces == maxDepth ? 0.5 : 1) * S * ubar;
-            break;
-        }
-        case NEUMANN: {
-            Float pdf_sample;
-            auto vhit = scene.Sample(sampler.Get2D(), &pdf_sample);
-            vhit.ComputeScatteringFunctions(r, arena);
-            auto qbar = SpecToFloat(vhit.bsdf->f(vhit.wo, vhit.wo));
-            // simplification of sgn(-wo, n) * m
-            S *= Dot(isect.wo, isect.n) < -1e-6 ? Float(m) : -Float(m);
-            solution_sample += S * G(isect.p, vhit.p) * qbar / pdf_sample;
-            break;
-        }
-        case ROBIN: {
-            // TODO: implement
-            break;
-        }
-        }
+        isect.ComputeScatteringFunctions(r, arena);
 
         // Sample BSDF to get new path direction
-        auto wi = UniformSampleHemisphere(sampler.Get2D());
-        ray = isect.SpawnRay(wi);
+        Vector3f wi = UniformSampleHemisphere(sampler.Get2D());
 
+        auto ubar = SpecToFloat(Pi * isect.bsdf->f(isect.wo, isect.wo));
+        // here sign(0) = 1 so that S is unchanged in that case
+        S *= Dot(isect.wo, isect.n) < 1e-6 ? Float(m) : -Float(m);
+        solution_sample += Float(bounces == maxDepth ? 0.5 : 1) * S * ubar;
+
+        ray = isect.SpawnRay(wi);
     }
     auto res = c * (pre_solution + solution_sample);
-    Float res_v[3] = {res, 16, 0};
+    Float res_v[3] = {res, 16, (Float)did_isect};
 
     return Spectrum::FromRGB(res_v);
 }

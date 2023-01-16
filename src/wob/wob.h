@@ -57,7 +57,7 @@ private:
     tinycolormap::ColormapType colourmap;
 
     inline pbrt::Float SpecToFloat(const pbrt::Spectrum &s) const {
-        return pbrt::Pi * (s[0] + -s[2]);
+        return s[0] + -s[2];
     }
 
     inline void FloatToRGB(pbrt::Float f, pbrt::Float *out) const {
