@@ -148,7 +148,7 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
                     Float px = (Float(pixel.x) + 0.5f) / Float(sampleBounds.Diagonal().x) - 0.5f;
                     Float py = (Float(pixel.y) + 0.5f) / Float(sampleBounds.Diagonal().y) - 0.5f;
                     ray.o = Point3f(scale * px, scale  * py, 0);
-                    ray.d = UniformSampleHemisphere(tileSampler->Get2D());
+                    ray.d = UniformSampleSphere(tileSampler->Get2D());
 #endif
 
                     // Evaluate radiance along camera ray
@@ -291,12 +291,12 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
 #undef PIXEL
 }
 
-pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Scene &scene, pbrt::Sampler &sampler,
-                                 pbrt::MemoryArena &arena, int depth) const
+pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, const pbrt::Scene &scene,
+                                 pbrt::Sampler &sampler, pbrt::MemoryArena &arena, int depth) const
 {
     ProfilePhase _(Prof::SamplerIntegratorLi);
-    Point3f p = r.o;
-    RayDifferential ray(r);
+    RayDifferential ray(r_DO_NOT_USE);
+    Point3f p = ray.o;
     int bounces;
     int start = 0;
 
@@ -322,7 +322,7 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Sce
         }
 
         auto t_ = -p.z * inv_dz;
-        p = { p.x + t_ * r.d.x, p.y + t_ * r.d.y, 0 };
+        p = { p.x + t_ * ray.d.x, p.y + t_ * ray.d.y, 0 };
         ray.o = p;
         ray.d = DomainCoefficient() * initial_dir;
 
@@ -333,6 +333,11 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Sce
 #else
     auto did_isect = true;
 #endif
+
+    if ((domain == INTERIOR) != did_isect) {
+        Float res_v[3] = {0, 0, (Float)did_isect};
+        return Spectrum::FromRGB(res_v);
+    }
 
     Float c = DomainCoefficient() * Float(scene.OnBoundary(p) ? 2. : 1.);
 
@@ -388,12 +393,13 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r, const pbrt::Sce
         // Calculate estimate
         // Assume material is MatteMaterial with sigma=0 for LambertianReflection BxDF
 
-        isect.ComputeScatteringFunctions(r, arena);
+        isect.ComputeScatteringFunctions(ray, arena);
 
         // Sample BSDF to get new path direction
         Vector3f wi = UniformSampleHemisphere(sampler.Get2D());
 
-        auto ubar = SpecToFloat(Pi * isect.bsdf->f(isect.wo, isect.wo));
+//        auto ubar = Pi * SpecToFloat(isect.bsdf->f(isect.wo, isect.wo));
+        auto ubar = 0.5f * isect.p.y;
         // here sign(0) = 1 so that S is unchanged in that case
         S *= Dot(isect.wo, isect.n) < 1e-6 ? Float(m) : -Float(m);
         solution_sample += Float(bounces == maxDepth ? 0.5 : 1) * S * ubar;
