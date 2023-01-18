@@ -78,7 +78,9 @@ class Film {
     const std::string filename;
     Bounds2i croppedPixelBounds;
 
+#ifndef PBRT_EXT_WOB
   private:
+#endif
     // Film Private Data
     struct Pixel {
         Pixel() { xyz[0] = xyz[1] = xyz[2] = filterWeightSum = 0; }

@@ -11,16 +11,10 @@
 
 #include <tinycolormap.hpp>
 
-#define USE_SAMPLER_INTEGRATOR 0
-
 namespace pbrt_ext
 {
 
-#if USE_SAMPLER_INTEGRATOR
 class WoBIntegrator : public pbrt::SamplerIntegrator
-#else
-class WoBIntegrator : public pbrt::Integrator
-#endif
 {
     enum BoundaryCond {
         DIRICHLET,
@@ -45,11 +39,6 @@ public:
 
     void Render(const pbrt::Scene &scene) override;
 private:
-#if !USE_SAMPLER_INTEGRATOR
-    std::shared_ptr<pbrt::Sampler> sampler;
-    const pbrt::Bounds2i pixelBounds;
-    std::shared_ptr<const pbrt::Camera> camera;
-#endif
     const int maxDepth;
     const pbrt::Float rrThreshold;
     BoundaryCond cond;

@@ -299,12 +299,14 @@ void SamplerIntegrator::Render(const Scene &scene) {
                             (int)tileSampler->CurrentSampleNumber());
                         L = Spectrum(0.f);
                     } else if (L.y() < -1e-5) {
+#ifndef PBRT_EXT_WOB
                         LOG(ERROR) << StringPrintf(
                             "Negative luminance value, %f, returned "
                             "for pixel (%d, %d), sample %d. Setting to black.",
                             L.y(), pixel.x, pixel.y,
                             (int)tileSampler->CurrentSampleNumber());
                         L = Spectrum(0.f);
+#endif
                     } else if (std::isinf(L.y())) {
                           LOG(ERROR) << StringPrintf(
                             "Infinite luminance value returned "
