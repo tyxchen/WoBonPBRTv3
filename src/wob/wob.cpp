@@ -95,6 +95,9 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
             RGBToXYZ(result, reinterpret_cast<Float*>(pixel_buf.splatXYZ));
             out_file << estimate;
         } else {
+            pixel_buf.splatXYZ[0] = 1;
+            pixel_buf.splatXYZ[1] = 1;
+            pixel_buf.splatXYZ[2] = 1;
             out_file << did_isect;
         }
 
@@ -123,10 +126,10 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
     // first, check intersection with the object
     SurfaceInteraction isect_initial;
     auto initial_dir = UniformSampleHemisphere(sampler.Get2D());
-    auto did_isect = scene.Intersect(ray, &isect_initial);
-    did_isect = did_isect && copysignf(1.0f, isect_initial.p.z) == copysignf(1.0f, p.z);
-    if (domain == EXTERIOR && did_isect) {
-        did_isect = false;
+    auto in_interior = scene.Intersect(ray, &isect_initial);
+    in_interior = in_interior && copysignf(1.0f, isect_initial.p.z) == copysignf(1.0f, p.z);
+    if (domain == EXTERIOR && in_interior) {
+        in_interior = false;
         ray = isect_initial.SpawnRay(initial_dir);
         p = isect_initial.p;
     } else {
@@ -144,12 +147,23 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
         ray.o = p;
         ray.d = DomainCoefficient() * initial_dir;
 
-        auto test_ray = Ray(p, r_DO_NOT_USE.d);
-        did_isect = did_isect && scene.IntersectP(test_ray);
+        if (domain == INTERIOR && in_interior) {
+            auto test_ray = Ray(p, r_DO_NOT_USE.d);
+            // TODO: expand for non-convex boundary shapes
+            size_t num_hits = 0;
+            SurfaceInteraction interior_isect;
+
+            while (scene.Intersect(test_ray, &interior_isect)) {
+                test_ray = interior_isect.SpawnRay(test_ray.d);
+                ++num_hits;
+            }
+
+            in_interior = num_hits % 2 == 1;
+        }
     }
 
-    if ((domain == INTERIOR) != did_isect) {
-        Float res_v[3] = {(Float)did_isect, 0, 0};
+    if ((domain == INTERIOR) != in_interior) {
+        Float res_v[3] = { (Float)in_interior, 0, 0};
         return Spectrum::FromRGB(res_v);
     }
 
@@ -221,7 +235,7 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
         ray = isect.SpawnRay(wi);
     }
     auto res = c * (pre_solution + solution_sample);
-    Float res_v[3] = {(Float)did_isect, 128, res};
+    Float res_v[3] = { (Float)in_interior, 128, res};
 
     return Spectrum::FromRGB(res_v);
 }

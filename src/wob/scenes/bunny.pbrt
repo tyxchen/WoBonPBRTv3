@@ -1,16 +1,17 @@
-LookAt 5 -5 10   1 0 0   1 0 0
+LookAt 2 0 15   2 0 0   1 0 0
 Camera "perspective" "float fov" [45]
 Film "image"
-"integer xresolution" [1024] "integer yresolution" [1024]
+"integer xresolution" [256] "integer yresolution" [256]
 #"integer xresolution" [32] "integer yresolution" [32]
-    "string filename" "bunny-raw.png"
+    "string filename" "bunny.png"
 
-Sampler "random" "integer pixelsamples" 16
+Sampler "random" "integer pixelsamples" 1024
 
-Integrator "path"
-#Integrator "wob"
-#    "string boundarycond" "dirichlet"
-#    "string colourmap" "jet"
+#Integrator "path"
+Integrator "wob"
+    "integer maxdepth" 10
+    "string boundarycond" "dirichlet"
+    "string colourmap" "jet"
 #    "string domaintype" "exterior"
 
 WorldBegin
