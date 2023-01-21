@@ -1,0 +1,5 @@
+LookAt 2 0 15   2 0 0   1 0 0
+Camera "perspective" "float fov" [45]
+Film "image"
+"integer xresolution" [256] "integer yresolution" [256]
+#"integer xresolution" [64] "integer yresolution" [64]
