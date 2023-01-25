@@ -1,25 +1,39 @@
 Include "bunny-camera.pbrt"
     "string filename" "bunny-raw.png"
 
-Sampler "random" "integer pixelsamples" 1024
+Sampler "random" "integer pixelsamples" 2048
 
 Integrator "path"
 
 WorldBegin
 
-LightSource "infinite" "rgb L" [.4 .45 .5]
-LightSource "distant" "blackbody L" [3000 1.5]
-	"point from" [15 -15 110]
+#LightSource "infinite" "rgb L" [1. 1. 1.]
 
-Texture "stripe" "spectrum" "stripe"
-	"rgb K0" [0. 0. 1.]
-	"rgb K1" [1. 0. 0.]
-MakeNamedMaterial "A" "string type" "matte" "texture Kd" "stripe"
+AttributeBegin
+	AreaLightSource "diffuse" "rgb L" [50. 50. 50. ]
+	Translate 25 5 5
+	Shape "sphere" "float radius" [3]
+AttributeEnd
+
+#Texture "stripe" "spectrum" "stripe"
+#	"rgb K0" [0. 0. 1.]
+#	"rgb K1" [1. 0. 0.]
+#MakeNamedMaterial "A" "string type" "matte" "texture Kd" "stripe"
+MakeNamedMaterial "A" "string type" "matte" "color Kd" [1. 1. 1.]
 
 AttributeBegin
 NamedMaterial "A"
 Shape "plymesh"
 	"string filename" "geometry/bunny-watertight-back.ply"
+AttributeEnd
+
+AttributeBegin
+  Material "matte" "color Kd" [1. 1. 1.]
+  Translate -2.4 0 0
+  Shape "trianglemesh"
+      "integer indices" [0 1 2 0 2 3]
+      "point P" [ 0 -20 -20   0 20 -20   0 20 20    0 -20 20 ]
+      "float st" [ 0 0   1 0    1 1   0 1 ]
 AttributeEnd
 
 WorldEnd

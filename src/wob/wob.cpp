@@ -23,6 +23,7 @@ inline Float G(const Point3f &x, const Point3f &y) {
 
 inline Float H(const Point3f &x, const Point3f &y, const Normal3f &n_y) {
     auto r = (y - x).Length();
+    if (r < 1e-3) return 0;
     return -Inv4Pi * Dot(y - x, n_y) / (r * r * r);
 }
 
@@ -172,6 +173,7 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
     Float solution_sample(0.);
     Float pre_solution(0.);
     Float S(1.);
+    SurfaceInteraction isect;
 
     for (bounces = start; bounces <= maxDepth; ++bounces) {
         // Find next path vertex and accumulate contribution
@@ -179,35 +181,42 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
                 << ", solution_sample = " << solution_sample;
 
         // Intersect _ray_ with scene and store intersection in _isect_
-        SurfaceInteraction isect, isect_current;
+        SurfaceInteraction isect_current;
+        RayDifferential sampled_ray;
 
         size_t m = 0;
-        auto o = ray.o;
-
+        auto prev_isect = isect;
+        auto d = ray.d;
+        if (bounces > start) {
+            ray = prev_isect.SpawnRay(d);
+        }
         // Forward intersection
         while (scene.Intersect(ray, &isect_current)) {
-//            ray.o = OffsetRayOrigin(isect_current.p, isect_current.pError, isect_current.n, ray.d);
             ray = isect_current.SpawnRay(ray.d);
 
             m += 1;
             auto u = sampler.Get1D();
-            if (Float(m) < Float(1.) / u) {  // equivalent to u < 1/m for reservoir sampling
+            if (u < Float(1.) / Float(m)) {  // equivalent to u < 1/m for reservoir sampling
                 isect = isect_current;
+                sampled_ray = ray;
             }
         }
 
         // Backward intersection
-        ray.o = o;
-        ray.d *= -1;
-        ray.tMax = Infinity;
+        if (bounces > start) {
+            ray = prev_isect.SpawnRay(-d);
+        } else {
+            ray = Ray(p, -d);
+        }
 
         while (scene.Intersect(ray, &isect_current)) {
             ray = isect_current.SpawnRay(ray.d);
 
             m += 1;
             auto u = sampler.Get1D();
-            if (Float(m) < Float(1.) / u) {
+            if (u < Float(1.) / Float(m)) {
                 isect = isect_current;
+                sampled_ray = ray;
             }
         }
 
@@ -219,7 +228,7 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
         // Calculate estimate
         // Assume material is MatteMaterial with sigma=0 for LambertianReflection BxDF
 
-        isect.ComputeScatteringFunctions(ray, arena);
+        isect.ComputeScatteringFunctions(sampled_ray, arena);
 
         // Sample BSDF to get new path direction
         Vector3f wi = UniformSampleHemisphere(sampler.Get2D());
@@ -228,16 +237,18 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
         // Manual adjustments for the bunny
         // - 0.25f: the bunny is 8 units wide, since our colourmap is from -1 to 1 we have to scale by 0.25
         // - -0.5f: the bunny's centre is around y = 0.5; this recentres the bunny.
-//        auto ubar = -isect.p.x;
-//        auto ubar = -isect.p.y;
-        auto yint = (int)floor(isect.p.y);
-        auto ubar = (yint + 8) % 2 == 1 ? 1.f : -1.f;
+//        auto ubar = isect.p.x;
+        auto ubar = 0.125f * isect.p.y;
+//        auto yint = (int)floor(isect.p.y);
+//        auto ubar = (yint + 8) % 2 == 1 ? 1.f : -1.f;
         // here sign(0) = 1 so that S is unchanged in that case
-        S *= Dot(isect.wo, isect.n) < 1e-6 ? Float(m) : -Float(m);
+        S *= Dot(sampled_ray.d, isect.n) < 1e-6 ? Float(m) : -Float(m);
         solution_sample += Float(bounces == maxDepth ? 0.5 : 1) * S * ubar;
 
-        ray = isect.SpawnRay(wi);
+        ray.d = wi;
+        p = isect.p;
     }
+
     auto res = c * (pre_solution + solution_sample);
     Float res_v[3] = { (Float)in_interior, 128, res};
 
@@ -269,6 +280,7 @@ WoBIntegrator *pbrt_ext::CreateWoBIntegrator(const pbrt::ParamSet &params, std::
         params.FindOneString("domaintype", "interior");
     std::string colourmapParam =
         params.FindOneString("colourmap", "turbo");
+    std::cout << "Recursion Depth: " << maxDepth << std::endl;
     return new WoBIntegrator(maxDepth, camera, sampler, pixelBounds,
                              rrThreshold, boundaryCond, domainType, colourmapParam);
 }
