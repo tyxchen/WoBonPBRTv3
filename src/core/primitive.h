@@ -61,15 +61,6 @@ class Primitive {
                                             MemoryArena &arena,
                                             TransportMode mode,
                                             bool allowMultipleLobes) const = 0;
-#if defined(PBRT_EXT_WOB)
-    virtual SurfaceInteraction Sample(const Point2f &u, Float *pdf) const = 0;
-    virtual Float Area() const {
-        throw std::logic_error("Not implemented!");
-    };
-    virtual Float SolidAngle(const Point3f &p) const {
-        throw std::logic_error("Not implemented!");
-    }
-#endif
 };
 
 // GeometricPrimitive Declarations
@@ -88,24 +79,6 @@ class GeometricPrimitive : public Primitive {
     void ComputeScatteringFunctions(SurfaceInteraction *isect,
                                     MemoryArena &arena, TransportMode mode,
                                     bool allowMultipleLobes) const;
-#if defined(PBRT_EXT_WOB)
-    SurfaceInteraction Sample(const pbrt::Point2f &u, pbrt::Float *pdf) const override {
-        auto intr = shape->Sample(u, pdf);
-        // TODO: something less hacky and more efficient than just casting a ray like this
-        //  in order to get the UV and shape/primitive
-        Ray r({0, 0, 0}, Vector3f(intr.p));
-        SurfaceInteraction isect;
-        shape->Intersect(r, &r.tMax, &isect);
-        isect.primitive = this;
-        return isect;
-    }
-    Float Area() const override {
-        return shape->Area();
-    }
-    Float SolidAngle(const Point3f &p) const override {
-        return shape->SolidAngle(p);
-    }
-#endif
 
   private:
     // GeometricPrimitive Private Data
@@ -135,17 +108,6 @@ class TransformedPrimitive : public Primitive {
     Bounds3f WorldBound() const {
         return PrimitiveToWorld.MotionBounds(primitive->WorldBound());
     }
-#if defined(PBRT_EXT_WOB)
-    SurfaceInteraction Sample(const pbrt::Point2f &u, pbrt::Float *pdf) const override {
-        return primitive->Sample(u, pdf);
-    }
-    Float Area() const override {
-        return primitive->Area();
-    }
-    Float SolidAngle(const pbrt::Point3f &p) const override {
-        return primitive->SolidAngle(p);
-    }
-#endif
 
   private:
     // TransformedPrimitive Private Data

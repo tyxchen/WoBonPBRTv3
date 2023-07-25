@@ -43,10 +43,6 @@
 #include "primitive.h"
 #include <atomic>
 
-#if defined(PBRT_EXT_WOB)
-#include "wob/primitive_visitor.h"
-#endif
-
 namespace pbrt {
 struct BVHBuildNode;
 
@@ -96,20 +92,6 @@ class BVHAccel : public Aggregate {
     const SplitMethod splitMethod;
     std::vector<std::shared_ptr<Primitive>> primitives;
     LinearBVHNode *nodes = nullptr;
-
-#if defined(PBRT_EXT_WOB)
-    // We don't want to mess with visibility more than we need to, so we put shared
-    // implementation in another class
-    pbrt_ext::PrimitiveVisitor<BVHAccel> visitor;
-
-public:
-    SurfaceInteraction Sample(const Point2f &u, Float *pdf) const override {
-        return visitor.sample(u, pdf);
-    }
-    Float SolidAngle(const Point3f &p) const override {
-        return visitor.winding_number(p);
-    }
-#endif
 };
 
 std::shared_ptr<BVHAccel> CreateBVHAccelerator(

@@ -121,7 +121,6 @@
 #if defined(PBRT_EXT_WOB)
 // Additional headers
 #include "wob/wob.h"
-#include "wob/StripeTexture.h"
 #endif
 
 namespace pbrt {
@@ -678,10 +677,6 @@ std::shared_ptr<Texture<Spectrum>> MakeSpectrumTexture(
         tex = CreateWindySpectrumTexture(tex2world, tp);
     else if (name == "ptex")
         tex = CreatePtexSpectrumTexture(tex2world, tp);
-#if defined(PBRT_EXT_WOB)
-    else if (name == "stripe")
-        tex = CreateStripeSpectrumTexture(tex2world, tp);
-#endif
     else
         Warning("Spectrum texture \"%s\" unknown.", name.c_str());
     tp.ReportUnused();

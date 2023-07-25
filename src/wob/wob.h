@@ -35,7 +35,7 @@ public:
                   const std::string &colourmapParam = "turbo");
 
     pbrt::Spectrum Li(const pbrt::RayDifferential &ray, const pbrt::Scene &scene, pbrt::Sampler &sampler,
-                      pbrt::MemoryArena &arena, int depth = 0) const;
+                      pbrt::MemoryArena &arena, int depth) const;
 
     void Render(const pbrt::Scene &scene) override;
 private:
@@ -44,10 +44,6 @@ private:
     BoundaryCond cond;
     DomainType domain;
     tinycolormap::ColormapType colourmap;
-
-    inline pbrt::Float SpecToFloat(const pbrt::Spectrum &s) const {
-        return s[0] + -s[2];
-    }
 
     inline void FloatToRGB(pbrt::Float f, pbrt::Float *out) const {
         f = pbrt::Float(0.5) * (f + pbrt::Float(1.));
@@ -60,6 +56,12 @@ private:
     inline pbrt::Float DomainCoefficient() const {
         return domain == INTERIOR ? 1 : -1;
     }
+
+    inline bool CheckInteriorPoint(const pbrt::Scene &scene, pbrt::Sampler &sampler, pbrt::Point3f &p,
+                                   pbrt::RayDifferential &ray) const;
+
+    inline void Intersect(const pbrt::Scene &scene, pbrt::RayDifferential ray, pbrt::Sampler &sampler,
+                          pbrt::SurfaceInteraction &isect, pbrt::RayDifferential &sampled_ray, size_t &m) const;
 };
 
 WoBIntegrator *CreateWoBIntegrator(const pbrt::ParamSet &params,
