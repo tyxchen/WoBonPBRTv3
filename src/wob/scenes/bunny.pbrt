@@ -1,28 +1,19 @@
 Include "bunny-camera.pbrt"
     "string filename" "bunny.png"
 
-Sampler "random" "integer pixelsamples" 100000
+Sampler "random" "integer pixelsamples" 1000
 
 Integrator "wob"
     "integer maxdepth" [4]
     "string boundarycond" "dirichlet"
     "string colourmap" "jet"
-#    "string domaintype" "exterior"
 
 WorldBegin
 
-#LightSource "infinite" "rgb L" [.4 .45 .5]
 LightSource "distant" "blackbody L" [3000 1.5]
 	"point from" [15 -15 110]
 
-#MakeNamedMaterial "A" "string type" "matte" "color Kd" [1.00000 0.000000 0.000000]
-Texture "stripe" "spectrum" "stripe"
-	"rgb K0" [0. 0. .5]
-	"rgb K1" [.5 0. 0.]
-MakeNamedMaterial "A" "string type" "matte" "texture Kd" "stripe"
-
 AttributeBegin
-NamedMaterial "A"
 Shape "plymesh"
 	"string filename" "geometry/bunny-watertight.ply"
 AttributeEnd
