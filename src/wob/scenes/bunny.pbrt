@@ -1,7 +1,7 @@
 Include "bunny-camera.pbrt"
     "string filename" "bunny.png"
 
-Sampler "random" "integer pixelsamples" 1000
+Sampler "random" "integer pixelsamples" 100000
 
 Integrator "wob"
     "integer maxdepth" [4]

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import subprocess
 import matplotlib as mpl
@@ -15,8 +17,9 @@ class Render:
         scene_file = Path(self.args.datafile)
         scene_file = scene_file.with_stem(scene_file.stem + '-scene')
 
-        print("### Rendering scene ###")
-        subprocess.run([self.args.pbrt, scene_file])
+        if self.args.render_scene:
+            print("### Rendering scene ###")
+            subprocess.run([self.args.pbrt, scene_file])
 
         print("### Rendering domain ###")
         subprocess.run([self.args.pbrt, self.args.datafile])
@@ -24,6 +27,7 @@ class Render:
     def composite(self):
         print("### Compositing ###")
         data_file = Path(self.args.datafile).with_suffix('.png')
+        data_file = data_file.relative_to(data_file.parent)
         output_file = data_file.with_stem(data_file.stem + '-plt')
 
         data = pd.read_csv(str(data_file) + '.txt', header=None).to_numpy()
@@ -49,8 +53,10 @@ class Render:
         lims = np.percentile(data_ma.compressed(), [0.5, 99.5])
         data_ma -= lims[0]
         data_ma /= lims[1] - lims[0]
-        img = bg_ma + mpl.colormaps['jet'](data_ma.clip(0, 1), alpha=1)[:, :, :3]
+        img = bg_ma + mpl.colormaps[self.args.cmap](data_ma.clip(0, 1), alpha=1)[:, :, :3]
         plt.imsave(output_file, img)
+
+        print(f"Wrote composited output to {output_file}")
 
     def run(self):
         if not self.args.composite_only:
@@ -60,10 +66,13 @@ class Render:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('datafile', help="Path to PBRT data file")
+    parser.add_argument('datafile', help="Path to PBRT scene file")
+    parser.add_argument('-s', '--render-scene', action='store_true',
+                        help="Render the background scene file")
     parser.add_argument('-c', '--composite-only', action='store_true',
-                        help="Only perform compositing; don't run PBRT")
-    parser.add_argument('--pbrt', help="Path to PBRT executable", default='pbrt')
+                        help="Only perform the compositing step; don't run PBRT")
+    parser.add_argument('--pbrt', default='pbrt', help="Path to PBRT executable")
+    parser.add_argument('--cmap', default='jet', help="Name of matplotlib colourmap to visualize the result with")
 
     renderer = Render(parser.parse_args())
     renderer.run()

@@ -4,6 +4,7 @@ src/bin
 src/objs
 .sconsign.dblite
 
+build
 cmake-build-debug
 cmake-build-release
 venv

@@ -17,16 +17,6 @@
 using namespace pbrt;
 using namespace pbrt_ext;
 
-inline Float G(const Point3f &x, const Point3f &y) {
-    return Inv4Pi / (x - y).Length();
-}
-
-inline Float H(const Point3f &x, const Point3f &y, const Normal3f &n_y) {
-    auto r = (y - x).Length();
-    if (r < 1e-3) return 0;
-    return -Inv4Pi * Dot(y - x, n_y) / (r * r * r);
-}
-
 WoBIntegrator::WoBIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
                              std::shared_ptr<Sampler> sampler,
                              const pbrt::Bounds2i &pixelBounds, pbrt::Float rrThreshold,
@@ -38,18 +28,12 @@ WoBIntegrator::WoBIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
 {
     if (boundaryCond == "dirichlet") {
         cond = DIRICHLET;
-    } else if (boundaryCond == "neumann") {
-        cond = NEUMANN;
-    } else if (boundaryCond == "robin") {
-        cond = ROBIN;
     } else {
         throw std::logic_error("Bad boundary condition given.");
     }
 
     if (domainType == "interior") {
         domain = INTERIOR;
-    } else if (domainType == "exterior") {
-        domain = EXTERIOR;
     } else {
         throw std::logic_error("Bad domain type given.");
     }
@@ -83,14 +67,14 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
         auto &pixel_buf = camera->film->GetPixel(pixel);
         Float result[3];
         XYZToRGB(pixel_buf.xyz, result);
-        auto estimate = result[2] / pixel_buf.filterWeightSum;
-        bool did_isect = std::fabs(result[0]) != 0.;
+        auto estimate = result[1] / pixel_buf.filterWeightSum;
+        bool in_interior = std::fabs(result[0]) != 0.;
 
         pixel_buf.xyz[0] = 0;
         pixel_buf.xyz[1] = 0;
         pixel_buf.xyz[2] = 0;
 
-        if ((domain == INTERIOR) == did_isect) {
+        if ((domain == INTERIOR) == in_interior) {
             FloatToRGB(estimate, result);
             // Hack splatting functionality, since dividing by the number of samples isn't done
             // until the very end for Pixel.xyz
@@ -103,7 +87,7 @@ void WoBIntegrator::Render(const pbrt::Scene &scene)
             out_file << 0;
         }
 
-        mask_file << did_isect;
+        mask_file << in_interior;
 
         if (++i < width) {
             out_file << ",";
@@ -188,7 +172,8 @@ pbrt::Spectrum WoBIntegrator::Li(const pbrt::RayDifferential &r_DO_NOT_USE, cons
     }
 
     auto res = DomainCoefficient() * (pre_solution + solution_sample);
-    Float res_v[3] = { (Float)in_interior, 128, res};
+    // [ mask, numerical solution, dummy value ]
+    Float res_v[3] = { (Float)in_interior, res, 0};
 
     return Spectrum::FromRGB(res_v);
 }

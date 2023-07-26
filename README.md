@@ -6,28 +6,43 @@ This is an extension of PBRT version 3 that implements our SIGGRAPH NA 2023 pape
 Specifically, this is the codebase used to generate the figure featured in section 5.3, *WoB within MC rendering*.
 This codebase only implements a solver for the interior Dirichlet problem.
 
+![A lengthwise slice of the Stanford Bunny, with a smooth linear gradient from red to blue](src/wob/scenes/bunny-plt.png)
+
 ## Directory structure
 
 All of the relevant extension code is contained within the `src/wob` subfolder. In particular:
 
-- `wob.cpp` and `wob.h`: Main implementation of the extension
+- `wob.cpp` and `wob.h`: Main implementation of the extension through the `WobIntegrator` class (specifically `WoBIntegrator::Li`)
 - `scenes`: Example scenes used in rendering. The figure in the paper used the bunny scene.
 - `thirdparty`: Dependency libraries
 
 Additional modifications were made to `src/core/api.cpp` to integrate the new `WoBIntegrator` class,
-and to `src/core/geometry.h` to fix zero vector normalization.
+`src/core/film.h` to expose private methods,
+`src/core/geometry.h` to fix zero vector normalization,
+and `src/core/integrator.h` to disable negative luminance checks.
 
 ## Dependencies
 
-As with base PBRT, dependencies are included as git submodules.
+### C++ dependencies
 
-    git clone --recurse-submodules https://github.com/tyxchen/WoBPBRT
+As with base PBRT, C++ dependencies are included as git submodules.
 
-There is only one external dependency:
+    git clone --recurse-submodules https://github.com/tyxchen/WoBonPBRTv3.git
+
+There is only one external C++ dependency:
 
 - [tinycolormap](https://github.com/yuki-koyama/tinycolormap): a header-only library for colormaps
 
-## Building
+### Python dependencies
+
+Running the turnkey render script (as described below) requires the following:
+
+- Python 3.9+
+- matplotlib
+- numpy
+- pandas
+
+## Building and rendering
 
 ```
 mkdir build
@@ -38,17 +53,19 @@ make pbrt_exe
 
 Due to how PBRT is architected, the solution must be rendered separately from the scene;
 the separate renders must then be composited to produce the final image.
-To render the bunny example:
+To render and composite the bunny example:
 
-    python render.py src/wob/scenes/bunny.pbrt --pbrt build/pbrt 
+    python3 render.py src/wob/scenes/bunny.pbrt --pbrt build/pbrt --render-scene
 
-This will produce the following files in `src/wob/scenes`:
+This will produce the following files:
 
 - `bunny.png`: the interior solution as rendered by PBRT
 - `bunny.png.mask`: a mask file for compositing
 - `bunny.png.txt`: the raw numerical solution as rendered by PBRT
-- `bunny-scene.png`: the rendered scene
+- `bunny-scene.png`: the rendered background scene
 - `bunny-plt.png`: the final composited image
+
+Subsequent runs can skip rendering the background scene by removing the `--render-scene` flag.
 
 ## Credits
 
